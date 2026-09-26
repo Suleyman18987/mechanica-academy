@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {motion,inverse,compare,predict} from '../src/physics.js';
+import {pages} from '../src/content.js';
+const near=(a,b,eps=1e-7)=>assert.ok(Math.abs(a-b)<eps,`${a} != ${b}`);
+const base={mass:2,force:[0,-2,0],velocity:[2,3,.6],origin:[0,0,0]};
+test('Initial state for arbitrary t0 and origin',()=>{const p={...base,t0:3,origin:[-2,4,1]};assert.deepEqual(motion(p,3).r,p.origin);assert.deepEqual(motion(p,3).v,p.velocity);});
+test('Known constant force solution',()=>{const s=motion(base,2);assert.deepEqual(s.r,[4,4,1.2]);assert.deepEqual(s.v,[2,1,.6]);assert.deepEqual(s.a,[0,-1,0]);});
+test('Zero force conserves momentum and kinetic energy',()=>{const p={...base,force:[0,0,0]};const a=motion(p,0),b=motion(p,6);assert.deepEqual(a.p,b.p);near(a.kinetic,b.kinetic);assert.deepEqual(b.r,[12,18,3.5999999999999996]);});
+test('Numerical derivative recovers velocity and force for signed 3D inputs',()=>{for(const mass of [.5,2,5])for(const force of [[-10,7,3],[0,0,0],[10,-10,-10]])for(const time of [0,2,6]){const p={mass,force,velocity:[-3,2,1],origin:[1,-1,4]},h=.0001,s=motion(p,time),l=motion(p,time-h),r=motion(p,time+h);for(let i=0;i<3;i++){near((r.r[i]-l.r[i])/(2*h),s.v[i],1e-6);near(mass*(r.v[i]-l.v[i])/(2*h),force[i],1e-6);}}});
+test('Constant-force work equals kinetic energy change',()=>{const p={mass:3,force:[3,-2,4],velocity:[-1,2,0],origin:[2,3,-2]},a=motion(p,0),b=motion(p,4);near(p.force.reduce((sum,f,i)=>sum+f*(b.r[i]-a.r[i]),0),b.kinetic-a.kinetic);});
+test('Doubling mass halves acceleration and rest displacement',()=>{const p={...base,velocity:[0,0,0]};near(motion({...p,mass:4},3).r[1],motion(p,3).r[1]/2);});
+test('Polynomial inverse force has factor two and correct units coefficient',()=>{assert.deepEqual(inverse('polynomial',3,2,4).f,[0,12,0]);assert.deepEqual(inverse('polynomial',3,-2,4).f,[0,-12,0]);});
+test('Inverse solutions agree with numerical second derivatives',()=>{for(const mode of ['circle','polynomial'])for(const t of [0,.7,3,6]){const h=.0001,m=2.5,b=1.6,s=inverse(mode,m,b,t),l=inverse(mode,m,b,t-h),r=inverse(mode,m,b,t+h);for(let i=0;i<3;i++)near(m*(r.r[i]-2*s.r[i]+l.r[i])/(h*h),s.f[i],1e-5);}});
+test('Circular force points inward and is perpendicular to velocity',()=>{for(const t of [0,1,3,6]){const s=inverse('circle',2,1.3,t);assert.ok(s.f.reduce((n,f,i)=>n+f*s.r[i],0)<0);near(s.f.reduce((n,f,i)=>n+f*s.v[i],0),0);near(Math.hypot(...s.r),2);near(Math.hypot(...s.f),2*2*1.3**2);}});
+test('Difference of initial states cancels common acceleration',()=>{for(const t of [0,2,6]){const s=compare(-2,3,t);near(s.b-s.a,s.delta);near(s.delta,-2+2*t);}for(const t of [0,3,6])near(compare(0,1,t).delta,0);});
+test('Independent forecast methods coincide',()=>{for(let t=0;t<=10;t+=.1){const s=predict(t);near(s.analytic,s.stepped,1e-10);}});
+test('Invalid mass, non-finite data rejected',()=>{for(const mass of [0,-1,NaN,Infinity])assert.throws(()=>motion({...base,mass},0));assert.throws(()=>motion({...base,force:[NaN,0,0]},0));});
+test('Seven pages and all static formulas render without errors',()=>{assert.equal(pages.length,7);for(const page of pages)assert.ok(!page.html.includes('katex-error'));assert.equal((pages.find(p=>p.id==='direct').html.match(/class="proof-step"/g)||[]).length,12);});
+
